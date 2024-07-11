@@ -1,0 +1,39 @@
+services:
+  kalibr:
+    container_name: kalibr
+
+    build:
+      context: .
+      dockerfile: ./Dockerfile_ros1_20_04
+      args:
+        USERNAME: pointlaz
+
+    env_file:
+      - path: ./.env
+
+    environment:
+      DISPLAY: "${DISPLAY}"
+      QT_X11_NO_MITSHM: 1
+
+    volumes:
+      - type: bind
+        source: /tmp/.X11-unix
+        target: /tmp/.X11-unix
+
+      - type: bind
+        source: /run/user
+        target: /run/user
+
+      - type: bind
+        source: ./kalibr_calibrate_cameras.sh
+        target: /kalibr_calibrate_cameras.sh
+
+      - type: bind
+        source: /home/pointlaz/Drive
+        target: /hdd
+
+      - type: bind
+        source: ./april_6x6.yaml
+        target: /target.yaml
+
+    command: [ "/bin/bash", "/kalibr_calibrate_cameras.sh" ]
