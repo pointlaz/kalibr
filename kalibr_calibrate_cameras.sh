@@ -12,9 +12,7 @@ for CAMERA_INDEX in "${CAMERA_INDEXES[@]}"; do
 	--topics "${CAMERA_BASE_TOPIC}_${CAMERA_INDEX}" \
 	--mi-tol "${MUTUAL_INFORMATION_TOLERANCE}" \
 	--target /target.yaml \
-	--dont-show-report \
-	--use-blakezisserman
-	# --show-extraction \
+	--dont-show-report
 
 	CAMCHAIN_FILE="${BAG_BASE_PATH}/${BAG_NAME}-camchain.yaml"
 	REPORT_CAM_FILE="${BAG_BASE_PATH}/${BAG_NAME}-report-cam.pdf"
