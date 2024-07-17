@@ -25,8 +25,8 @@ services:
         target: /run/user
 
       - type: bind
-        source: ./kalibr_calibrate_cameras.sh
-        target: /kalibr_calibrate_cameras.sh
+        source: ./scripts/calibrate_cameras.sh
+        target: /calibrate_cameras.sh
 
       - type: bind
         source: /home/pointlaz/Drive
@@ -36,4 +36,4 @@ services:
         source: ./april_6x6.yaml
         target: /target.yaml
 
-    command: [ "/bin/bash", "/kalibr_calibrate_cameras.sh" ]
+    command: [ "/bin/bash", "/calibrate_cameras.sh" ]
