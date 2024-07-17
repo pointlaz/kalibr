@@ -787,7 +787,7 @@ bool PinholeProjection<DISTORTION_T>::initializeIntrinsics(const std::vector<Gri
       std::cin >> input_guess;
       SM_ASSERT_GT(std::runtime_error, input_guess, 0.0,
                 "Focal length needs to be positive.");
-      std::cout << "Initializing focal length to " << input_guess << std::endl;
+      // std::cout << "Initializing focal length to " << input_guess << std::endl;
       f_guesses.push_back(input_guess);
     } else {
       std::cout << "Initialization of focal length failed. You can enable"
@@ -797,6 +797,7 @@ bool PinholeProjection<DISTORTION_T>::initializeIntrinsics(const std::vector<Gri
   }
   // Get the median of the guesses if available.
   double f0 = PinholeHelpers::medianOfVectorElements(f_guesses);
+  std::cout << "Initializing focal length to " << f0 << std::endl;
 
   //set the estimate
   _fu = f0;
