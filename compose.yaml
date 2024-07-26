@@ -36,4 +36,6 @@ services:
         source: ./april_6x6.yaml
         target: /target.yaml
 
+    privileged: true
+
     command: [ "/bin/bash", "/calibrate_cameras.sh" ]
