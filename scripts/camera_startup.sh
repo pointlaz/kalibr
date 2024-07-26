@@ -1,13 +1,18 @@
 #!/usr/bin/env bash
 
+set -e
+
+if rosnode list | grep -q multi_camera; then
+    echo "The multi_camera node is running."
+    bash /scripts/stop_multi_camera_node.sh
+fi
+
 FRAME_RATE_ARG=$1
 DEFAULT_FRAME_RATE=10
 FRAME_RATE=${FRAME_RATE_ARG:-$DEFAULT_FRAME_RATE}
 
 echo "Camera startup at ${FRAME_RATE} fps"
 
-screen -XS camera exec rosnode kill /multi_camera 2>/dev/null
-screen -XS camera quit 1>/dev/null
 screen -dmS camera
 screen -XS camera exec roslaunch avt_vimba_camera multi_camera_node_no_trigger.launch compression_type:=none acquisition_rate:="${FRAME_RATE}"
 
