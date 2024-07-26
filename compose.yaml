@@ -25,8 +25,8 @@ services:
         target: /run/user
 
       - type: bind
-        source: ./scripts/calibrate_cameras.sh
-        target: /calibrate_cameras.sh
+        source: ./scripts
+        target: /scripts
 
       - type: bind
         source: /home/pointlaz/Drive
@@ -38,4 +38,4 @@ services:
 
     privileged: true
 
-    command: [ "/bin/bash", "/calibrate_cameras.sh" ]
+    command: [ "/bin/bash", "/scripts/calibrate_cameras.sh" ]
