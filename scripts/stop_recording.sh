@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 
-echo "Stop recording..."
+set -e
 
-NODE=$(rosnode list | grep record)
+echo "Stopping current recording..."
 
-screen -XS record exec rosnode kill ${NODE}
-sleep 5
+RECORD_NODE=$(rosnode list | grep record)
+
+screen -XS record exec rosnode kill "${RECORD_NODE}" 2>/dev/null
+sleep 2
 screen -XS record quit 1>/dev/null
 
 echo "Recording stopped."
