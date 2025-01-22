@@ -2,6 +2,10 @@
 
 set -e
 
+USAGE_MESSAGE="Usage: start_recording.sh [(-p | --path) PATH] [(-d | --duration) DURATION]
+-p, --path PATH          The path to the recording directory.
+-d, --duration DURATION  The duration of the recording  in seconds."
+
 DEFAULT_RECORDING_BASE_PATH="/hdd/Documents/LAZ_Data/Calibrations/Cameras"
 DEFAULT_BAG_DURATION=180
 
@@ -31,9 +35,7 @@ elif [[ $# == 2 ]]; then
         elif [[ ("$1" =~ "-d" && "$1" != "-d") || ("$1" =~ "--d" && "$1" != "--duration") ]]; then
             echo "Wrong flag for the duration."
         fi
-        echo "Usage: start_recording.sh [(-p | --path) PATH] [(-d | --duration) DURATION]
--p, --path PATH          The path to the recording directory.
--d, --duration DURATION  The duration of the recording  in seconds."
+        echo "$USAGE_MESSAGE"
         exit 1
     fi
 elif [[ $# == 4 ]]; then
@@ -73,16 +75,12 @@ elif [[ $# == 4 ]]; then
         else
             echo "Wrong flags for the path and the duration."
         fi
-        echo "Usage: start_recording.sh [(-p | --path) PATH] [(-d | --duration) DURATION]
--p, --path PATH          The path to the recording directory.
--d, --duration DURATION  The duration of the recording  in seconds."
+        echo "$USAGE_MESSAGE"
         exit 1
     fi
 else
-    echo "Wrong number of arguments. $# arguments were provided instead of 4.
-Usage: start_recording.sh [(-p | --path) PATH] [(-d | --duration) DURATION]
--p, --path PATH          The path to the recording directory.
--d, --duration DURATION  The duration of the recording in seconds."
+    echo "Wrong number of arguments. $# arguments were provided instead of 4."
+    echo "$USAGE_MESSAGE"
     exit 1
 fi
 
@@ -106,14 +104,14 @@ screen -dmS record
 
 for CAMERA_INDEX in "${CAMERA_INDEXES[@]}"; do
 
-    BAG_NAME="camera_${CAMERA_INDEX}"
+    BAG_NAME="${CALIBRATION_DATE}_camera_${CAMERA_INDEX}"
     BAG_PATH="${RECORDING_PATH}/${BAG_NAME}"
 
     echo "Camera $((CAMERA_INDEX + 1)) recording will start in 10 seconds..."
 
     sleep 10
 
-    screen -XS record exec rosbag record --buffsize 1024 --duration "${BAG_DURATION}" -O "${BAG_PATH}" "/multi_camera/image_raw_${CAMERA_INDEX_ARG}"
+    screen -XS record exec rosbag record --buffsize 1024 --duration "${BAG_DURATION}" -O "${BAG_PATH}" "/multi_camera/image_raw_${CAMERA_INDEX}"
 
     echo "Camera $((CAMERA_INDEX + 1)) recording is started."
 
@@ -125,7 +123,7 @@ for CAMERA_INDEX in "${CAMERA_INDEXES[@]}"; do
 
     if [[ "${CAMERA_INDEX}" -lt "${CAMERA_INDEXES[-1]}" ]]; then
         echo "Prepare the camera $((CAMERA_INDEX + 2)) now."
-        sleep 10
+        sleep 5
     fi
 
 done
