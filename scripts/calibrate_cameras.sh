@@ -68,10 +68,10 @@ for CAMERA_INDEX in "${CAMERA_INDEXES[@]}"; do
 		mv "${CAMCHAIN_FILE}"    "${RESULTS_PATH}/"
 		mv "${REPORT_CAM_FILE}"  "${RESULTS_PATH}/"
 	else
-		rm "${CAMCHAIN_FILE}" 2>/dev/null
+		rm "${CAMCHAIN_FILE}" 2> /dev/null
 	fi
 
-	rm "${RESULTS_CAM_FILE}" 2>/dev/null
+	rm "${RESULTS_CAM_FILE}" 2> /dev/null
 done
 
 echo "All camera calibrations are done."

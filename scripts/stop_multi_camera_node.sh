@@ -4,7 +4,7 @@ set -e
 
 echo "Stopping multi_camera node..."
 
-screen -XS camera exec rosnode kill /multi_camera 2>/dev/null
+screen -XS camera exec rosnode kill /multi_camera 2> /dev/null
 
 sleep 2
 

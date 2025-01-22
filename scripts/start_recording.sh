@@ -130,4 +130,4 @@ done
 
 echo "All camera recordings are completed."
 
-screen -XS record quit 1>/dev/null
+screen -XS record quit 1> /dev/null
