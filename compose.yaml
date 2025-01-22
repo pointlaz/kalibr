@@ -4,12 +4,12 @@ services:
 
     build:
       context: .
-      dockerfile: ./Dockerfile_ros1_20_04
+      dockerfile: Dockerfile_ros1_20_04
       args:
         USERNAME: pointlaz
 
     env_file:
-      - path: ./.env
+      - path: .env
 
     environment:
       DISPLAY: "${DISPLAY}"
@@ -29,7 +29,7 @@ services:
         target: /scripts
 
       - type: bind
-        source: /home/pointlaz/Drive
+        source: $HOST_RECORDING_PATH
         target: /hdd
 
       - type: bind
