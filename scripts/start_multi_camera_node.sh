@@ -3,8 +3,8 @@
 set -e
 
 if rosnode list | grep -q multi_camera; then
-    echo "The multi_camera node is running."
-    bash /scripts/stop_multi_camera_node.sh
+    echo "The multi_camera node is running. Stopping before restarting."
+    bash ./stop_multi_camera_node.sh
 fi
 
 FRAME_RATE_ARG=$1
