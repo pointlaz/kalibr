@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
 
+source ~/catkin_ws/devel/setup.bash
+
 set -e
 
 USAGE_MESSAGE="Usage: start_recording.sh [(-p | --path) PATH] [(-d | --duration) DURATION]
 -p, --path PATH          The path to the recording directory.
 -d, --duration DURATION  The duration of the recording  in seconds."
 
-DEFAULT_RECORDING_BASE_PATH="/hdd/Documents/LAZ_Data/Calibrations/Cameras"
-DEFAULT_BAG_DURATION=180
+DEFAULT_RECORDING_BASE_PATH="/recordings/calibrations/cameras"
+DEFAULT_BAG_DURATION=120
 
 if [[ $# == 0 ]]; then
     RECORDING_BASE_PATH_ARG="${DEFAULT_RECORDING_BASE_PATH}"
@@ -85,7 +87,7 @@ else
 fi
 
 CALIBRATION_DATE=$(date +%Y-%m-%d)
-RECORDING_PATH="${RECORDING_BASE_PATH_ARG}/${CALIBRATION_DATE}/Bags"
+RECORDING_PATH="${RECORDING_BASE_PATH_ARG}/${CALIBRATION_DATE}/bags"
 BAG_DURATION="${BAG_DURATION_ARG}"
 
 mkdir -p "${RECORDING_PATH}"
@@ -100,18 +102,16 @@ CAMERA_INDEXES=(
     6
 )
 
-screen -dmS record
-
 for CAMERA_INDEX in "${CAMERA_INDEXES[@]}"; do
 
-    BAG_NAME="${CALIBRATION_DATE}_camera_${CAMERA_INDEX}"
+    BAG_NAME="camera_${CAMERA_INDEX}"
     BAG_PATH="${RECORDING_PATH}/${BAG_NAME}"
 
     echo "Camera $((CAMERA_INDEX + 1)) recording will start in 10 seconds..."
 
     sleep 10
 
-    screen -XS record exec rosbag record --buffsize 1024 --duration "${BAG_DURATION}" -O "${BAG_PATH}" "/multi_camera/image_raw_${CAMERA_INDEX}"
+    rosbag record --buffsize 1024 --duration "${BAG_DURATION}" -O "${BAG_PATH}" "/multi_camera/image_raw_${CAMERA_INDEX}"
 
     echo "Camera $((CAMERA_INDEX + 1)) recording is started."
 
@@ -130,4 +130,4 @@ done
 
 echo "All camera recordings are completed."
 
-screen -XS record quit 1> /dev/null
+rostopic pub --once /scanner_state std_msgs/Int8 "data: 0"

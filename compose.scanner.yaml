@@ -1,0 +1,15 @@
+services:
+  backend:
+    container_name: backend-kalibr
+
+    env_file:
+      - path: ~/third_party/kalibr/.env
+
+    volumes:
+      - type: bind
+        source: ~/third_party/kalibr/scripts
+        target: /scripts
+
+      - type: bind
+        source: $$HOST_RECORDING_PATH
+        target: /recordings

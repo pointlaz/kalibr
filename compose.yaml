@@ -29,8 +29,8 @@ services:
         target: /scripts
 
       - type: bind
-        source: $HOST_RECORDING_PATH
-        target: /hdd
+        source: $$HOST_RECORDING_PATH
+        target: /recordings
 
       - type: bind
         source: ./april_6x6.yaml
