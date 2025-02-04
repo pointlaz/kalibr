@@ -13,7 +13,7 @@ FRAME_RATE_ARG=$1
 DEFAULT_FRAME_RATE=10
 FRAME_RATE=${FRAME_RATE_ARG:-$DEFAULT_FRAME_RATE}
 
-rostopic pub --once /scanner_state std_msgs/Int8 "data: 1"
+rostopic pub --once /scanner_state std_msgs/Int8 "data: 11" 1>/dev/null
 
 sleep 5
 

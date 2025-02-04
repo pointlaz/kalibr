@@ -113,17 +113,13 @@ for CAMERA_INDEX in "${CAMERA_INDEXES[@]}"; do
 
     rosbag record --buffsize 1024 --duration "${BAG_DURATION}" -O "${BAG_PATH}" "/multi_camera/image_raw_${CAMERA_INDEX}"
 
-    echo "Camera $((CAMERA_INDEX + 1)) recording is started."
-
-    sleep "$((BAG_DURATION + 5))"
-
     echo "Camera $((CAMERA_INDEX + 1)) recording is finished."
 
-    echo "The file '${BAG_NAME}.bag' has been saved in the '${RECORDING_PATH}' directory."
+    echo -e "The file '${BAG_NAME}.bag' has been saved in the '${RECORDING_PATH}' directory.\n\n"
 
     if [[ "${CAMERA_INDEX}" -lt "${CAMERA_INDEXES[-1]}" ]]; then
-        echo "Prepare the camera $((CAMERA_INDEX + 2)) now."
-        sleep 5
+        echo -e "Prepare the camera $((CAMERA_INDEX + 2)) now.\n\n"
+        sleep 10
     fi
 
 done
