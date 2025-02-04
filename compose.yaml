@@ -6,7 +6,9 @@ services:
       context: .
       dockerfile: Dockerfile_ros1_20_04
       args:
-        USERNAME: pointlaz
+        USERNAME: $USER
+
+    user: $USER
 
     env_file:
       - path: .env
@@ -29,7 +31,7 @@ services:
         target: /scripts
 
       - type: bind
-        source: $$HOST_RECORDING_PATH
+        source: /home/$USER/Data
         target: /recordings
 
       - type: bind

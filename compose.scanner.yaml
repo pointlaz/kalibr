@@ -2,14 +2,18 @@ services:
   backend:
     container_name: backend-kalibr
 
+    user: $USER
+
+    working_dir: /scripts
+
     env_file:
-      - path: ~/third_party/kalibr/.env
+      - path: /home/$USER/third_party/kalibr/.env
 
     volumes:
       - type: bind
-        source: ~/third_party/kalibr/scripts
+        source: /home/$USER/third_party/kalibr/scripts
         target: /scripts
 
       - type: bind
-        source: $$HOST_RECORDING_PATH
+        source: /home/$USER/Data
         target: /recordings
