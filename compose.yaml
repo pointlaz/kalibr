@@ -31,8 +31,8 @@ services:
         target: /scripts
 
       - type: bind
-        source: /home/$USER/Data
-        target: /recordings
+        source: ../Scanner/Odometry/Calibration
+        target: /Calibration
 
       - type: bind
         source: ./april_6x6.yaml
@@ -40,4 +40,6 @@ services:
 
     privileged: true
 
-    command: [ "/bin/bash", "/scripts/calibrate_cameras.sh" ]
+    working_dir: /Calibration
+
+    command: [ "/bin/bash", "/scripts/start_calibrations.bash" ]
