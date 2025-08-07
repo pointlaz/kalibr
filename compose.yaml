@@ -40,6 +40,4 @@ services:
 
     privileged: true
 
-    working_dir: /Calibration
-
-    command: [ "/bin/bash", "/scripts/start_calibrations.bash" ]
+    command: ["sleep", "infinity"]

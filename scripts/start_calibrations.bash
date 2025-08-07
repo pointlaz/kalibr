@@ -1,5 +1,7 @@
 #!/bin/env bash
 
+set -e
+
 if [[ -z "${SCANNER_SN}" ]]; then
 	echo "'SCANNER_SN' variable must be set, i.e. A valid path to a directory containing the bags used for calibration."
 	exit 1
@@ -37,35 +39,42 @@ if (( "${#BAG_PATHS[@]}" == 0 )); then
 	exit 1
 fi
 
+source "${WORKSPACE}"/devel/setup.bash
+
 for BAG_PATH in "${BAG_PATHS[@]}"; do
 
 	CAMERA_INDEX="${BAG_PATH#*camera-}"
 	CAMERA_INDEX="${CAMERA_INDEX%-calibration*}"
 
-	echo "Calibrating camera '${CAMERA_INDEX}' using the bag: '${BAG_PATH}' ..."
+	echo ""
+	read -n 1 -sp "Calibrating camera '${CAMERA_INDEX}' using the bag: '${BAG_PATH##*/}'.
+Press 'ENTER' or 'SPACE' to start calibration or skip by pressing ANY other key." answer
+    echo ""
 
-	rosrun kalibr kalibr_calibrate_cameras \
-	--models "${CAMERA_MODEL}-${DISTORTION_MODEL}" \
-	--bag "${BAG_PATH}" \
-	--topics "/multi_camera/image_raw_${CAMERA_INDEX}" \
-	--mi-tol "${MUTUAL_INFORMATION_TOLERANCE}" \
-	--target /target.yaml \
-	--dont-show-report
+	if [[ "$answer" == "" ]]; then
+		rosrun kalibr kalibr_calibrate_cameras \
+		--models "${CAMERA_MODEL}-${DISTORTION_MODEL}" \
+		--bag "${BAG_PATH}" \
+		--topics "/multi_camera/image_raw_${CAMERA_INDEX}" \
+		--mi-tol "${MUTUAL_INFORMATION_TOLERANCE}" \
+		--target /target.yaml \
+		--dont-show-report
 
-	CAMCHAIN_FILE="${BAG_PATH%.bag}-camchain.yaml"
-	REPORT_CAM_FILE="${BAG_PATH%.bag}-report-cam.pdf"
-	RESULTS_CAM_FILE="${BAG_PATH%.bag}-results-cam.txt"
+		CAMCHAIN_FILE="${BAG_PATH%.bag}-camchain.yaml"
+		REPORT_CAM_FILE="${BAG_PATH%.bag}-report-cam.pdf"
+		RESULTS_CAM_FILE="${BAG_PATH%.bag}-results-cam.txt"
 
-	if [ -f "$REPORT_CAM_FILE" ]; then
-		RESULTS_PATH="${RAW_DIR_PATH}/../results/${CAMERA_MODEL}-${DISTORTION_MODEL}_mi-tol_${MUTUAL_INFORMATION_TOLERANCE}"
-		mkdir -p "${RESULTS_PATH}"
-		mv "${CAMCHAIN_FILE}"    "${RESULTS_PATH}/"
-		mv "${REPORT_CAM_FILE}"  "${RESULTS_PATH}/"
-	else
-		rm "${CAMCHAIN_FILE}" 2> /dev/null
+		if [ -f "$REPORT_CAM_FILE" ]; then
+			RESULTS_PATH="${RAW_DIR_PATH}/../results/${CAMERA_MODEL}_${DISTORTION_MODEL}_mi-tol_${MUTUAL_INFORMATION_TOLERANCE}"
+			mkdir -p "${RESULTS_PATH}"
+			mv "${CAMCHAIN_FILE}"    "${RESULTS_PATH}/"
+			mv "${REPORT_CAM_FILE}"  "${RESULTS_PATH}/"
+		else
+			rm "${CAMCHAIN_FILE}" 2> /dev/null
+		fi
+
+		rm "${RESULTS_CAM_FILE}" 2> /dev/null
 	fi
-
-	rm "${RESULTS_CAM_FILE}" 2> /dev/null
 done
 
 echo "All camera calibrations are done."
