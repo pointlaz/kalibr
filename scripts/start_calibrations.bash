@@ -39,42 +39,56 @@ if (( "${#BAG_PATHS[@]}" == 0 )); then
 	exit 1
 fi
 
+RESULTS_PATH="${SCANNER_SN}/cameras/results/${CAMERA_MODEL}_${DISTORTION_MODEL}_mi-tol_${MUTUAL_INFORMATION_TOLERANCE}"
+
+mkdir -p "${RESULTS_PATH}"
+
 source "${WORKSPACE}"/devel/setup.bash
 
 for BAG_PATH in "${BAG_PATHS[@]}"; do
 
+	BAG_NAME="${BAG_PATH##*/}"
+
+	CAMCHAIN_FILE="${BAG_NAME%.bag}-camchain.yaml"
+	REPORT_CAM_FILE="${BAG_NAME%.bag}-report-cam.pdf"
+
 	CAMERA_INDEX="${BAG_PATH#*camera-}"
 	CAMERA_INDEX="${CAMERA_INDEX%-calibration*}"
 
-	echo ""
-	read -n 1 -sp "Calibrating camera '${CAMERA_INDEX}' using the bag: '${BAG_PATH##*/}'.
-Press 'ENTER' or 'SPACE' to start calibration or skip by pressing ANY other key." answer
-    echo ""
+	if [[ -e "${RESULTS_PATH}/${CAMCHAIN_FILE}" || -e "${RESULTS_PATH}/${REPORT_CAM_FILE}" ]]; then
+		echo "$(tput setaf 3)"Camera \'"${CAMERA_INDEX}"\' has already been calibrated using the bag : "${BAG_NAME}"."$(tput sgr0)"
+		echo  "$(tput setaf 3)"Press 'ENTER' or 'SPACE' to overwrite the calibration or skip by pressing ANY other key."$(tput sgr0)"
+		read -n 1 -sp "" answer
 
-	if [[ "$answer" == "" ]]; then
-		rosrun kalibr kalibr_calibrate_cameras \
-		--models "${CAMERA_MODEL}-${DISTORTION_MODEL}" \
-		--bag "${BAG_PATH}" \
-		--topics "/multi_camera/image_raw_${CAMERA_INDEX}" \
-		--mi-tol "${MUTUAL_INFORMATION_TOLERANCE}" \
-		--target /target.yaml \
-		--dont-show-report
-
-		CAMCHAIN_FILE="${BAG_PATH%.bag}-camchain.yaml"
-		REPORT_CAM_FILE="${BAG_PATH%.bag}-report-cam.pdf"
-		RESULTS_CAM_FILE="${BAG_PATH%.bag}-results-cam.txt"
-
-		if [ -f "$REPORT_CAM_FILE" ]; then
-			RESULTS_PATH="${RAW_DIR_PATH}/../results/${CAMERA_MODEL}_${DISTORTION_MODEL}_mi-tol_${MUTUAL_INFORMATION_TOLERANCE}"
-			mkdir -p "${RESULTS_PATH}"
-			mv "${CAMCHAIN_FILE}"    "${RESULTS_PATH}/"
-			mv "${REPORT_CAM_FILE}"  "${RESULTS_PATH}/"
-		else
-			rm "${CAMCHAIN_FILE}" 2> /dev/null
+		if [[ "$answer" != "" ]]; then
+			echo ""
+			echo -e "Skipping camera '${CAMERA_INDEX}' calibration.\n"
+			continue;
 		fi
-
-		rm "${RESULTS_CAM_FILE}" 2> /dev/null
 	fi
+
+	echo ""
+	echo -e "Calibrating camera '${CAMERA_INDEX}' using the bag: '${BAG_NAME}'."
+	echo ""
+
+	rosrun kalibr kalibr_calibrate_cameras \
+	--models "${CAMERA_MODEL}-${DISTORTION_MODEL}" \
+	--bag "${BAG_PATH}" \
+	--topics "/multi_camera/image_raw_${CAMERA_INDEX}" \
+	--mi-tol "${MUTUAL_INFORMATION_TOLERANCE}" \
+	--target /target.yaml \
+	--dont-show-report
+
+	if [[ -f "${RAW_DIR_PATH}/${REPORT_CAM_FILE}" && -f "${RAW_DIR_PATH}/${CAMCHAIN_FILE}" ]]; then
+		mv "${RAW_DIR_PATH}/${REPORT_CAM_FILE}"  "${RESULTS_PATH}/"
+		mv "${RAW_DIR_PATH}/${CAMCHAIN_FILE}"    "${RESULTS_PATH}/"
+	else
+		rm -f "${RAW_DIR_PATH}/${CAMCHAIN_FILE}" 2>/dev/null
+	fi
+
+	RESULTS_CAM_FILE="${BAG_NAME%.bag}-results-cam.txt"
+	rm -f "${RAW_DIR_PATH}/${RESULTS_CAM_FILE}" 2>/dev/null
+
 done
 
-echo "All camera calibrations are done."
+echo "$(tput setaf 2)"All camera calibrations are done."$(tput sgr0)"
