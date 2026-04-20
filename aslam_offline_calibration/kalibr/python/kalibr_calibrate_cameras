@@ -120,6 +120,7 @@ def parseArgs():
     outputSettings.add_argument('--plot', action='store_true', dest='plot', help='Plot during calibration (this could be slow).')
     outputSettings.add_argument('--dont-show-report', action='store_true', dest='dontShowReport', help='Do not show the report on screen after calibration.')
     outputSettings.add_argument('--export-poses', action='store_true', dest='exportPoses', help='Export the optimized poses into a CSV (time_ns, position, quaterion)')
+    outputSettings.add_argument('--approx-focal-length', type=float, default=None, dest='approxFocalLength', help='Initial focal length in pixels if auto-initialization fails.')
 
     #print help if no argument is specified
     if len(sys.argv)==1:
@@ -194,9 +195,20 @@ def main():
                 obsdb.addObservation(cam_id, obs)
 
             #initialize the intrinsics
+            if parsed.approxFocalLength is not None:
+                import os as _os
+                _r, _w = _os.pipe()
+                _os.write(_w, (str(parsed.approxFocalLength) + '\n').encode())
+                _os.close(_w)
+                _saved_stdin = _os.dup(0)
+                _os.dup2(_r, 0)
+                _os.close(_r)
             if not cam.initGeometryFromObservations(observations):
+                if parsed.approxFocalLength is not None:
+                    _os.dup2(_saved_stdin, 0); _os.close(_saved_stdin)
                 raise RuntimeError("Could not initialize the intrinsics for camera with topic: {0}. Try to use --verbose and check whether the calibration target extraction is successful.".format(topic))
-            
+            if parsed.approxFocalLength is not None:
+                _os.dup2(_saved_stdin, 0); _os.close(_saved_stdin)
             print("\tProjection initialized to: %s" % cam.geometry.projection().getParameters().flatten())
             print("\tDistortion initialized to: %s" % cam.geometry.projection().distortion().getParameters().flatten())
             
@@ -461,9 +473,20 @@ def main():
                 for cam_id, cam in enumerate(cameraList):
                     print("Reinitialize the intrinsics for camera {0}".format(cam_id))
                     observations = obsdb.getAllObsCam(cam_id)
+                    if parsed.approxFocalLength is not None:
+                        import os as _os
+                        _r, _w = _os.pipe()
+                        _os.write(_w, (str(parsed.approxFocalLength) + '\n').encode())
+                        _os.close(_w)
+                        _saved_stdin = _os.dup(0)
+                        _os.dup2(_r, 0)
+                        _os.close(_r)
                     if not cam.initGeometryFromObservations(observations):
+                        if parsed.approxFocalLength is not None:
+                            _os.dup2(_saved_stdin, 0); _os.close(_saved_stdin)
                         raise RuntimeError("Could not re-initialize the intrinsics for camera with topic: {0}".format(topic))
-                    
+                    if parsed.approxFocalLength is not None:
+                        _os.dup2(_saved_stdin, 0); _os.close(_saved_stdin)
                     print("\tProjection initialized to: %s" % cam.geometry.projection().getParameters().flatten())
                     print("\tDistortion initialized to: %s" % cam.geometry.projection().distortion().getParameters().flatten())
                 
