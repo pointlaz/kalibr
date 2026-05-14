@@ -158,40 +158,23 @@ bool GridCalibrationTargetAprilgrid::computeObservation(
   std::sort(detections.begin(), detections.end(),
             AprilTags::TagDetection::sortByIdCompare);
 
-  // check for duplicate tagIds (--> if found: wild Apriltags in image not belonging to calibration target)
-  // (only if we have more than 1 tag...)
+  // Remove duplicate tagIds (e.g. another tag board in scene): drop ALL
+  // instances of any tag that appears more than once, since we cannot
+  // tell which one belongs to our calibration target.
   if (detections.size() > 1) {
-    for (unsigned i = 0; i < detections.size() - 1; i++)
-      if (detections[i].id == detections[i + 1].id) {
-        //show the duplicate tags in the image
-        cv::destroyAllWindows();
-        cv::namedWindow("Wild Apriltag detected. Hide them!");
-        cv::startWindowThread();
-
-        cv::Mat imageCopy = image.clone();
-        cv::cvtColor(imageCopy, imageCopy, cv::COLOR_GRAY2RGB);
-
-        //mark all duplicate tags in image
-        for (int j = 0; j < detections.size() - 1; j++) {
-          if (detections[j].id == detections[j + 1].id) {
-            detections[j].draw(imageCopy);
-            detections[j + 1].draw(imageCopy);
-          }
-        }
-
-        cv::putText(imageCopy, "Duplicate Apriltags detected. Hide them.",
-                    cv::Point(50, 50), cv::FONT_HERSHEY_SIMPLEX, 0.8,
-                    CV_RGB(255,0,0), 2, 8, false);
-        cv::putText(imageCopy, "Press enter to exit...", cv::Point(50, 80),
-                    cv::FONT_HERSHEY_SIMPLEX, 0.8, CV_RGB(255,0,0), 2, 8, false);
-        cv::imshow("Duplicate Apriltags detected. Hide them", imageCopy);  // OpenCV call
-
-        // and exit
-        SM_FATAL_STREAM("\n[ERROR]: Found apriltag not belonging to calibration board. Check the image for the tag and hide it.\n");
-
-        cv::waitKey();
-        exit(0);
-      }
+    std::vector<AprilTags::TagDetection> filtered;
+    filtered.reserve(detections.size());
+    for (size_t i = 0; i < detections.size(); ) {
+      size_t j = i + 1;
+      while (j < detections.size() && detections[j].id == detections[i].id) ++j;
+      if (j == i + 1) filtered.push_back(detections[i]);
+      i = j;
+    }
+    detections.swap(filtered);
+    if (detections.size() < _options.minTagsForValidObs) {
+      success = false;
+      return success;
+    }
   }
 
   // convert corners to cv::Mat (4 consecutive corners form one tag)
