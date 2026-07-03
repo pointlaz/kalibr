@@ -5,6 +5,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile_ros1_20_04
+      target: builder
       args:
         USERNAME: $USER
 
@@ -39,5 +40,38 @@ services:
         target: /target.yaml
 
     privileged: true
+
+    command: ["sleep", "infinity"]
+
+  # Slim, ROS-free runtime for flatbuffer-MCAP-only camera calibration.
+  # No rosbag/cv_bridge/roslib/ROS distro installed — see the "runtime"
+  # stage in Dockerfile_ros1_20_04 for what this can and can't do.
+  kalibr-slim:
+    container_name: kalibr-slim
+
+    build:
+      context: .
+      dockerfile: Dockerfile_ros1_20_04
+      target: runtime
+      args:
+        USERNAME: $USER
+
+    user: $USER
+
+    env_file:
+      - path: .env
+
+    volumes:
+      - type: bind
+        source: ./scripts
+        target: /scripts
+
+      - type: bind
+        source: ../Scanner/Odometry/Calibration
+        target: /Calibration
+
+      - type: bind
+        source: ./april_6x6.yaml
+        target: /target.yaml
 
     command: ["sleep", "infinity"]

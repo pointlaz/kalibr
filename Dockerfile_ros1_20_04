@@ -1,4 +1,4 @@
-FROM osrf/ros:noetic-desktop-full
+FROM osrf/ros:noetic-desktop-full AS builder
 
 # Dependencies we use, catkin tools is very good build system
 # https://github.com/ethz-asl/kalibr/wiki/installation
@@ -105,3 +105,254 @@ RUN echo "if [[ -e /opt/ros/${ROS_DISTRO}/setup.bash ]]; then source /opt/ros/${
 ENV KALIBR_MANUAL_FOCAL_LENGTH_INIT=1
 
 ENTRYPOINT [ "/bin/bash", "/entrypoint.sh" ]
+
+##################################################################
+# runtime (slim, no ROS) — flatbuffer-MCAP-only camera calibration
+#
+# Copies the boost.python bindings built by the `builder` stage above and
+# runs them on a plain Ubuntu 20.04 base with none of ros-noetic-desktop-full,
+# rosbag, cv_bridge, roslib, or mcap-ros1-support installed. Only the
+# flatbuffer MCAP decode path in McapImageDatasetReader.py works here (the
+# .bag / ros1-MCAP paths need rosbag/cv_bridge, deliberately not installed).
+#
+# The package list below is the full, mechanically-derived transitive
+# closure of `ldd` on every compiled .so under $WORKSPACE/devel/lib, mapped
+# to owning packages via `dpkg -S`. Most of it (GDAL, GTK, netcdf, poppler,
+# kerberos, ...) is not ROS-related at all — it's pulled in by Ubuntu
+# 20.04's default libopencv-highgui4.2/libopencv-imgcodecs4.2 build, which
+# kalibr's compiled bindings are linked against regardless of ROS. Trimming
+# that further would mean rebuilding OpenCV with fewer codecs/backends,
+# which is a separate, much larger effort.
+##################################################################
+FROM ubuntu:20.04 AS runtime
+
+ARG USERNAME=pointlaz
+ARG USER_UID=1000
+ARG USER_GID=$USER_UID
+
+RUN export DEBIAN_FRONTEND=noninteractive \
+	&& apt-get update && apt-get install -y --no-install-recommends \
+	python3 \
+	python3-pip \
+	python3-matplotlib \
+	python3-yaml \
+	python3-igraph \
+	python3-opencv \
+	python3-wxgtk4.0 \
+	libaec0 \
+	libamd2 \
+	libarmadillo9 \
+	libarpack2 \
+	libasn1-8-heimdal \
+	libatk-bridge2.0-0 \
+	libatk1.0-0 \
+	libatspi2.0-0 \
+	libblas3 \
+	libboost-filesystem1.71.0 \
+	libboost-python1.71.0 \
+	libboost-regex1.71.0 \
+	libboost-serialization1.71.0 \
+	libboost-thread1.71.0 \
+	libbrotli1 \
+	libbsd0 \
+	libcairo-gobject2 \
+	libcairo2 \
+	libcamd2 \
+	libccolamd2 \
+	libcfitsio8 \
+	libcharls2 \
+	libcholmod3 \
+	libcolamd2 \
+	libcurl3-gnutls \
+	libdap25 \
+	libdapclient6v5 \
+	libdatrie1 \
+	libepoxy0 \
+	libepsilon1 \
+	libffi7 \
+	libfontconfig1 \
+	libfreetype6 \
+	libfreexl1 \
+	libfribidi0 \
+	libfyba0 \
+	libgcrypt20 \
+	libgdal26 \
+	libgdcm3.0 \
+	libgdk-pixbuf2.0-0 \
+	libgeos-3.8.0 \
+	libgeos-c1v5 \
+	libgeotiff5 \
+	libgfortran5 \
+	libgif7 \
+	libglib2.0-0 \
+	libgmp10 \
+	libgnutls30 \
+	libgomp1 \
+	libgraphite2-3 \
+	libgssapi-krb5-2 \
+	libgssapi3-heimdal \
+	libgtk-3-0 \
+	libharfbuzz0b \
+	libhcrypto4-heimdal \
+	libhdf4-0-alt \
+	libhdf5-103 \
+	libheimbase1-heimdal \
+	libheimntlm0-heimdal \
+	libhogweed5 \
+	libhx509-5-heimdal \
+	libicu66 \
+	libidn2-0 \
+	libilmbase24 \
+	libjbig0 \
+	libjpeg-turbo8 \
+	libjson-c4 \
+	libk5crypto3 \
+	libkmlbase1 \
+	libkmldom1 \
+	libkmlengine1 \
+	libkrb5-26-heimdal \
+	libkrb5-3 \
+	libkrb5support0 \
+	liblapack3 \
+	liblcms2-2 \
+	libldap-2.4-2 \
+	libltdl7 \
+	liblz4-1 \
+	libmetis5 \
+	libminizip1 \
+	libmysqlclient21 \
+	libnetcdf15 \
+	libnettle7 \
+	libnghttp2-14 \
+	libnspr4 \
+	libnss3 \
+	libodbc1 \
+	libogdi4.1 \
+	libopencv-calib3d4.2 \
+	libopencv-core4.2 \
+	libopencv-features2d4.2 \
+	libopencv-flann4.2 \
+	libopencv-highgui4.2 \
+	libopencv-imgcodecs4.2 \
+	libopencv-imgproc4.2 \
+	libopenexr24 \
+	libopenjp2-7 \
+	libp11-kit0 \
+	libpango-1.0-0 \
+	libpangocairo-1.0-0 \
+	libpangoft2-1.0-0 \
+	libpcre2-8-0 \
+	libpixman-1-0 \
+	libpng16-16 \
+	libpoppler97 \
+	libpq5 \
+	libproj15 \
+	libpsl5 \
+	libpython3.8 \
+	libqhull7 \
+	libquadmath0 \
+	libroken18-heimdal \
+	librtmp1 \
+	libsasl2-2 \
+	libspatialite7 \
+	libspqr2 \
+	libsqlite3-0 \
+	libssh-4 \
+	libssl1.1 \
+	libstdc++6 \
+	libsuitesparseconfig5 \
+	libsuperlu5 \
+	libsz2 \
+	libtasn1-6 \
+	libtbb2 \
+	libthai0 \
+	libtiff5 \
+	libunistring2 \
+	liburiparser1 \
+	libwayland-client0 \
+	libwayland-cursor0 \
+	libwayland-egl1 \
+	libwebp6 \
+	libwind0-heimdal \
+	libx11-6 \
+	libxau6 \
+	libxcb-render0 \
+	libxcb-shm0 \
+	libxcb1 \
+	libxcomposite1 \
+	libxcursor1 \
+	libxdamage1 \
+	libxdmcp6 \
+	libxerces-c3.2 \
+	libxext6 \
+	libxfixes3 \
+	libxi6 \
+	libxinerama1 \
+	libxkbcommon0 \
+	libxml2 \
+	libxrandr2 \
+	libxrender1 \
+	libzstd1 \
+	odbcinst1debian2 \
+	sudo \
+	&& rm -rf /var/lib/apt/lists/*
+
+# Same numpy pin as the builder stage — numpy_eigen's boost.python bridge is
+# compiled against numpy's C API, so runtime numpy must stay ABI-compatible
+# with whatever the builder stage resolved (also <1.25).
+RUN pip3 install --no-cache-dir "numpy<1.25" mcap
+
+RUN groupadd --gid $USER_GID $USERNAME \
+	&& useradd -s /bin/bash --uid $USER_UID --gid $USER_GID -m $USERNAME \
+	&& echo "$USERNAME ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/$USERNAME \
+	&& chmod 0440 /etc/sudoers.d/$USERNAME
+
+USER $USERNAME
+
+ENV WORKSPACE=/home/$USERNAME/catkin_ws
+
+# devel/lib/<pkg>/<script> are symlinks into devel/.private/<pkg>/lib/... —
+# catkin's isolated-devel-space layout — so both trees are needed for the
+# compiled boost.python bindings (real files live under devel/.private).
+COPY --from=builder --chown=$USER_UID:$USER_GID ${WORKSPACE}/devel/lib ${WORKSPACE}/devel/lib
+COPY --from=builder --chown=$USER_UID:$USER_GID ${WORKSPACE}/devel/.private ${WORKSPACE}/devel/.private
+
+# Every catkin_python_setup()-based pure-Python package in this workspace
+# (not just kalibr's own) is installed into devel space as a "develop mode"
+# trampoline that resolves multi-file packages back into $WORKSPACE/src at
+# runtime — which this ROS-free stage never has (only single-file packages
+# like aslam_cv_backend/incremental_calibration, whose whole implementation
+# lives directly in __init__.py, work via the devel/.private copy alone).
+# Bypass the trampoline by overlaying the real source for every such package
+# straight from the build context. This is a MERGE, not a replace — each of
+# these directories already has its compiled .so binding symlinked in from
+# the devel/.private copy above (e.g. aslam_cv/libaslam_cv_python.so); COPY
+# onto an existing directory adds/overwrites files by name without deleting
+# what's already there, so the .so symlinks survive untouched.
+RUN rm -rf ${WORKSPACE}/devel/lib/kalibr
+COPY --chown=$USER_UID:$USER_GID aslam_optimizer/aslam_backend_python/python/aslam_backend ${WORKSPACE}/devel/lib/python3/dist-packages/aslam_backend
+COPY --chown=$USER_UID:$USER_GID aslam_cv/aslam_cameras_april/python/aslam_cameras_april ${WORKSPACE}/devel/lib/python3/dist-packages/aslam_cameras_april
+COPY --chown=$USER_UID:$USER_GID aslam_cv/aslam_cv_python/python/aslam_cv ${WORKSPACE}/devel/lib/python3/dist-packages/aslam_cv
+COPY --chown=$USER_UID:$USER_GID aslam_cv/aslam_cv_backend_python/python/aslam_cv_backend ${WORKSPACE}/devel/lib/python3/dist-packages/aslam_cv_backend
+COPY --chown=$USER_UID:$USER_GID aslam_nonparametric_estimation/aslam_splines_python/python/aslam_splines ${WORKSPACE}/devel/lib/python3/dist-packages/aslam_splines
+COPY --chown=$USER_UID:$USER_GID aslam_nonparametric_estimation/bsplines_python/python/bsplines ${WORKSPACE}/devel/lib/python3/dist-packages/bsplines
+COPY --chown=$USER_UID:$USER_GID aslam_incremental_calibration/incremental_calibration_python/src/incremental_calibration ${WORKSPACE}/devel/lib/python3/dist-packages/incremental_calibration
+COPY --chown=$USER_UID:$USER_GID aslam_offline_calibration/kalibr/python/kalibr_common ${WORKSPACE}/devel/lib/python3/dist-packages/kalibr_common
+COPY --chown=$USER_UID:$USER_GID aslam_offline_calibration/kalibr/python/kalibr_camera_calibration ${WORKSPACE}/devel/lib/python3/dist-packages/kalibr_camera_calibration
+COPY --chown=$USER_UID:$USER_GID aslam_offline_calibration/kalibr/python/kalibr_errorterms ${WORKSPACE}/devel/lib/python3/dist-packages/kalibr_errorterms
+COPY --chown=$USER_UID:$USER_GID aslam_offline_calibration/kalibr/python/kalibr_imu_camera_calibration ${WORKSPACE}/devel/lib/python3/dist-packages/kalibr_imu_camera_calibration
+COPY --chown=$USER_UID:$USER_GID aslam_offline_calibration/kalibr/python/kalibr_rs_camera_calibration ${WORKSPACE}/devel/lib/python3/dist-packages/kalibr_rs_camera_calibration
+COPY --chown=$USER_UID:$USER_GID Schweizer-Messer/numpy_eigen/src/numpy_eigen ${WORKSPACE}/devel/lib/python3/dist-packages/numpy_eigen
+COPY --chown=$USER_UID:$USER_GID Schweizer-Messer/sm_python/python/sm ${WORKSPACE}/devel/lib/python3/dist-packages/sm
+COPY --chown=$USER_UID:$USER_GID aslam_optimizer/sparse_block_matrix/src/sparse_block_matrix ${WORKSPACE}/devel/lib/python3/dist-packages/sparse_block_matrix
+COPY --chown=$USER_UID:$USER_GID aslam_offline_calibration/kalibr/python/kalibr_calibrate_cameras ${WORKSPACE}/devel/lib/kalibr/kalibr_calibrate_cameras
+COPY --chown=$USER_UID:$USER_GID aslam_offline_calibration/kalibr/python/kalibr_calibrate_rs_cameras ${WORKSPACE}/devel/lib/kalibr/kalibr_calibrate_rs_cameras
+
+# No /opt/ros/noetic/setup.bash to chain from in this stage, so set the
+# catkin devel-space env vars directly instead of sourcing devel/setup.bash.
+ENV PYTHONPATH=${WORKSPACE}/devel/lib/python3/dist-packages
+ENV LD_LIBRARY_PATH=${WORKSPACE}/devel/lib
+ENV PATH=${WORKSPACE}/devel/lib/kalibr:${PATH}
+ENV KALIBR_MANUAL_FOCAL_LENGTH_INIT=1
+
+WORKDIR /home/${USERNAME}

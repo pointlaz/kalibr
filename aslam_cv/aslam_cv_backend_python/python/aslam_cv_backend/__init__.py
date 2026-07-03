@@ -1,10 +1,26 @@
 # Import the numpy to Eigen type conversion.
-import roslib; roslib.load_manifest('numpy_eigen'); import numpy_eigen
+try:
+    import roslib; roslib.load_manifest('numpy_eigen')
+except ImportError:
+    pass
+import numpy_eigen
 # Import the sm library
-import roslib; roslib.load_manifest('sm_python'); import sm
+try:
+    import roslib; roslib.load_manifest('sm_python')
+except ImportError:
+    pass
+import sm
 # Import the aslam backend
-import roslib; roslib.load_manifest('aslam_backend'); import aslam_backend
-import roslib; roslib.load_manifest('aslam_cv_python'); import aslam_cv
+try:
+    import roslib; roslib.load_manifest('aslam_backend')
+except ImportError:
+    pass
+import aslam_backend
+try:
+    import roslib; roslib.load_manifest('aslam_cv_python')
+except ImportError:
+    pass
+import aslam_cv
 # Import the the C++ exports from your package library.
 from .libaslam_cv_backend_python import *
 # Import other files in the directory

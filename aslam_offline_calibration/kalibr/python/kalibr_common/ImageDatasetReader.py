@@ -1,6 +1,4 @@
-import cv_bridge
 import cv2
-import rosbag
 import os
 import numpy as np
 import pylab as pl
@@ -96,6 +94,9 @@ class BagImageDatasetReaderIterator(object):
 
 class BagImageDatasetReader(object):
   def __init__(self, bagfile, imagetopic, bag_from_to=None, perform_synchronization=False, bag_freq=None):
+    import cv_bridge
+    import rosbag
+
     self.bagfile = bagfile
     self.topic = imagetopic
     self.perform_synchronization = perform_synchronization

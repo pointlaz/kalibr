@@ -1,4 +1,3 @@
-import rosbag
 import os
 import sm
 import numpy as np
@@ -25,6 +24,8 @@ class BagImuDatasetReaderIterator(object):
 
 class BagImuDatasetReader(object):
     def __init__(self, bagfile, imutopic, bag_from_to=None, perform_synchronization=False):
+        import rosbag
+
         self.bagfile = bagfile
         self.topic = imutopic
         self.perform_synchronization = perform_synchronization

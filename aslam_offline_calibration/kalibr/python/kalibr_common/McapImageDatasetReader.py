@@ -22,7 +22,6 @@ import os
 import struct
 
 import cv2
-import cv_bridge
 import numpy as np
 import aslam_cv as acv
 import sm
@@ -194,7 +193,9 @@ class McapImageDatasetReader(object):
     self.mcap_path = mcap_path
     self.topic = imagetopic
     self.perform_synchronization = perform_synchronization
-    self.CVB = cv_bridge.CvBridge()
+    # Lazily created the first time a ros1-encoded record needs decoding;
+    # flatbuffer-only inputs never touch cv_bridge.
+    self.CVB = None
 
     files = _resolve_mcap_files(mcap_path)
 
@@ -203,14 +204,13 @@ class McapImageDatasetReader(object):
     # kind='fbs'   -> payload is the dict from _parse_pointlaz_image.
     self._records = []
 
-    from mcap_ros1.decoder import DecoderFactory as Ros1DecoderFactory
-
     for f in files:
+      # First pass: open with no decoder factories, just to learn the
+      # encoding of the target topic. This keeps mcap_ros1 (and the ROS1
+      # message stack it pulls in) out of the import graph entirely for
+      # flatbuffer-only inputs.
       with open(f, "rb") as fh:
-        # Always include the ROS1 decoder so iter_decoded_messages works for
-        # ros1-encoded channels; flatbuffer channels are read via the raw
-        # iter_messages path below and do not need a decoder.
-        reader = make_reader(fh, decoder_factories=[Ros1DecoderFactory()])
+        reader = make_reader(fh)
         summary = reader.get_summary()
 
         target_channels = {ch_id: ch for ch_id, ch in summary.channels.items()
@@ -224,18 +224,24 @@ class McapImageDatasetReader(object):
         sch = summary.schemas.get(first_ch.schema_id)
         msg_enc = first_ch.message_encoding
 
-        if msg_enc in ("ros1", "ros1msg"):
-          for schema, channel, message, ros_msg in reader.iter_decoded_messages(
-              topics=[imagetopic]):
-            self._records.append(("ros1", ros_msg, message.log_time))
-        elif msg_enc == "flatbuffer" and sch and sch.name == "pointlaz.Image":
+        if msg_enc == "flatbuffer" and sch and sch.name == "pointlaz.Image":
           for schema, channel, message in reader.iter_messages(topics=[imagetopic]):
             parsed = _parse_pointlaz_image(message.data)
             self._records.append(("fbs", parsed, message.log_time))
-        else:
+          continue
+        elif msg_enc not in ("ros1", "ros1msg"):
           raise RuntimeError(
               "Unsupported MCAP message encoding={0!r} schema={1!r} on topic {2!r}".format(
                   msg_enc, sch.name if sch else None, imagetopic))
+
+      # ros1/ros1msg: re-open with the ROS1 decoder, imported lazily here so
+      # it's never required for a flatbuffer-only run.
+      from mcap_ros1.decoder import DecoderFactory as Ros1DecoderFactory
+      with open(f, "rb") as fh:
+        reader = make_reader(fh, decoder_factories=[Ros1DecoderFactory()])
+        for schema, channel, message, ros_msg in reader.iter_decoded_messages(
+            topics=[imagetopic]):
+          self._records.append(("ros1", ros_msg, message.log_time))
 
     if not self._records:
       raise RuntimeError("Could not find topic {0} in {1}.".format(
@@ -311,6 +317,9 @@ class McapImageDatasetReader(object):
   def getImage(self, idx):
     kind, payload, log_time = self._records[idx]
     if kind == "ros1":
+      if self.CVB is None:
+        import cv_bridge
+        self.CVB = cv_bridge.CvBridge()
       data = _to_native_ros_msg(payload)
       if self.perform_synchronization:
         timestamp = acv.Time(self.timestamp_corrector.getLocalTime(
