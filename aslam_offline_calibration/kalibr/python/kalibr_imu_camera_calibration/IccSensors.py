@@ -18,22 +18,39 @@ import pylab as pl
 import scipy.optimize
 
 
+def _is_mcap_input(path):
+    import glob
+    import os
+    if os.path.isdir(path):
+        return bool(glob.glob(os.path.join(path, "*.mcap")))
+    return path.lower().endswith(".mcap")
+
 def initCameraBagDataset(bagfile, topic, from_to, freq, perform_synchronization):
-    print("Initializing camera rosbag dataset reader:")
+    print("Initializing camera dataset reader:")
     print("\tDataset:          {0}".format(bagfile))
     print("\tTopic:            {0}".format(topic))
-    reader = kc.BagImageDatasetReader(bagfile, topic, bag_from_to=from_to, bag_freq=freq, \
-                                      perform_synchronization=perform_synchronization)
-    print("\tNumber of images: {0}".format(len(reader.index)))
+    if _is_mcap_input(bagfile):
+        reader = kc.McapImageDatasetReader(bagfile, topic, bag_from_to=from_to, bag_freq=freq,
+                                           perform_synchronization=perform_synchronization)
+        print("\tNumber of images: {0}".format(reader.numImages()))
+    else:
+        reader = kc.BagImageDatasetReader(bagfile, topic, bag_from_to=from_to, bag_freq=freq, \
+                                          perform_synchronization=perform_synchronization)
+        print("\tNumber of images: {0}".format(len(reader.index)))
     return reader
 
 def initImuBagDataset(bagfile, topic, from_to=None, perform_synchronization=False):
-    print("Initializing imu rosbag dataset reader:")
+    print("Initializing imu dataset reader:")
     print("\tDataset:          {0}".format(bagfile))
     print("\tTopic:            {0}".format(topic))
-    reader = kc.BagImuDatasetReader(bagfile, topic, bag_from_to=from_to, \
-                                      perform_synchronization=perform_synchronization)
-    print("\tNumber of messages: {0}".format(len(reader.index)))
+    if _is_mcap_input(bagfile):
+        reader = kc.McapImuDatasetReader(bagfile, topic, bag_from_to=from_to, \
+                                         perform_synchronization=perform_synchronization)
+        print("\tNumber of messages: {0}".format(reader.numMessages()))
+    else:
+        reader = kc.BagImuDatasetReader(bagfile, topic, bag_from_to=from_to, \
+                                          perform_synchronization=perform_synchronization)
+        print("\tNumber of messages: {0}".format(len(reader.index)))
     return reader
 
 

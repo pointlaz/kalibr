@@ -133,11 +133,14 @@ ARG USER_GID=$USER_UID
 RUN export DEBIAN_FRONTEND=noninteractive \
 	&& apt-get update && apt-get install -y --no-install-recommends \
 	python3 \
+	python-is-python3 \
 	python3-pip \
 	python3-matplotlib \
 	python3-yaml \
+	python3-cairo \
 	python3-igraph \
 	python3-opencv \
+	python3-scipy \
 	python3-wxgtk4.0 \
 	libaec0 \
 	libamd2 \
@@ -347,6 +350,10 @@ COPY --chown=$USER_UID:$USER_GID Schweizer-Messer/sm_python/python/sm ${WORKSPAC
 COPY --chown=$USER_UID:$USER_GID aslam_optimizer/sparse_block_matrix/src/sparse_block_matrix ${WORKSPACE}/devel/lib/python3/dist-packages/sparse_block_matrix
 COPY --chown=$USER_UID:$USER_GID aslam_offline_calibration/kalibr/python/kalibr_calibrate_cameras ${WORKSPACE}/devel/lib/kalibr/kalibr_calibrate_cameras
 COPY --chown=$USER_UID:$USER_GID aslam_offline_calibration/kalibr/python/kalibr_calibrate_rs_cameras ${WORKSPACE}/devel/lib/kalibr/kalibr_calibrate_rs_cameras
+COPY --chown=$USER_UID:$USER_GID aslam_offline_calibration/kalibr/python/kalibr_calibrate_imu_camera ${WORKSPACE}/devel/lib/kalibr/kalibr_calibrate_imu_camera
+
+# Watch-folder job worker (see the module docstring for the job protocol).
+COPY scripts/calib_worker.py /usr/local/bin/calib_worker.py
 
 # No /opt/ros/noetic/setup.bash to chain from in this stage, so set the
 # catkin devel-space env vars directly instead of sourcing devel/setup.bash.

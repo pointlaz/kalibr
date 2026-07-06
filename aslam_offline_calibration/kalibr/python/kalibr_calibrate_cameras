@@ -491,9 +491,10 @@ def main():
             break #normal exit
 
 if __name__ == "__main__":
-    main()
-#     try:
-#         main()
-#     except Exception,e:
-#         sm.logError("Exception: {0}".format(e))
-#         sys.exit(-1)
+    try:
+        main()
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        sm.logError("Exception: {0}".format(e))
+        sys.exit(-1)

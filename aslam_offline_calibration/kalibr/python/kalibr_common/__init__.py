@@ -4,4 +4,5 @@ from .ConfigReader import *
 from .ImageDatasetReader import *
 from .McapImageDatasetReader import *
 from .ImuDatasetReader import *
+from .McapImuDatasetReader import *
 from .TargetExtractor import *

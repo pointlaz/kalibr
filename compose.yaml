@@ -43,6 +43,43 @@ services:
 
     command: ["sleep", "infinity"]
 
+  # Watch-folder calibration worker on the slim (ROS-free) runtime image.
+  # External stacks drive it with pure file I/O: drop <job-id>/job.yaml into
+  # the jobs volume, poll <job-id>/status.yaml. See scripts/calib_worker.py
+  # for the job protocol. Set KALIBR_JOBS_DIR (and USER_UID/USER_GID) in .env.
+  kalibr-worker:
+    container_name: kalibr-worker
+
+    build:
+      context: .
+      dockerfile: Dockerfile_ros1_20_04
+      target: runtime
+      args:
+        USERNAME: $USER
+        USER_UID: "${USER_UID:-1000}"
+        USER_GID: "${USER_GID:-1000}"
+
+    user: $USER
+
+    env_file:
+      - path: .env
+
+    environment:
+      MPLBACKEND: Agg
+
+    volumes:
+      - type: bind
+        source: ${KALIBR_JOBS_DIR:-./jobs}
+        target: /jobs
+
+      - type: bind
+        source: ${KALIBR_DATA_DIR:-./jobs}
+        target: /data
+
+    restart: unless-stopped
+
+    command: ["python3", "/usr/local/bin/calib_worker.py", "--jobs-dir", "/jobs"]
+
   # Slim, ROS-free runtime for flatbuffer-MCAP-only camera calibration.
   # No rosbag/cv_bridge/roslib/ROS distro installed — see the "runtime"
   # stage in Dockerfile_ros1_20_04 for what this can and can't do.
@@ -55,6 +92,10 @@ services:
       target: runtime
       args:
         USERNAME: $USER
+        # Match the host user so files written to mounted volumes are owned
+        # by the invoking user (set in .env; id -u / id -g).
+        USER_UID: "${USER_UID:-1000}"
+        USER_GID: "${USER_GID:-1000}"
 
     user: $USER
 
