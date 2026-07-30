@@ -102,9 +102,20 @@ def _build_command(spec, job_dir):
         models = spec.get("models") or ["pinhole-radtan"] * len(topics)
         if len(models) != len(topics):
             return None, "models length {0} != topics length {1}".format(len(models), len(topics))
+        # Optional pre-computed intrinsics camchain (materialized from camchain_yaml/
+        # camchain_path). Forward it as --intrinsics so kalibr can load per-camera
+        # intrinsics and, with --fix-intrinsics in extra_args, freeze them during the
+        # extrinsic solve (fixed-intrinsics profile). Absent = normal re-estimation.
+        intrinsics_args = []
+        camchain = spec.get("camchain")
+        if camchain:
+            if not os.path.isfile(camchain):
+                return None, "intrinsics camchain not found: {0!r}".format(camchain)
+            intrinsics_args = ["--intrinsics", camchain]
         argv = (["kalibr_calibrate_cameras", "--models"] + [str(m) for m in models]
                 + ["--target", target, "--bag", bag_link, "--topics"]
                 + [str(t) for t in topics]
+                + intrinsics_args
                 + ["--dont-show-report"] + extra)
         return argv, None
 

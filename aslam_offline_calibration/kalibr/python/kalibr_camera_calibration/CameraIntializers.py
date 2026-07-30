@@ -70,8 +70,17 @@ def stereoCalibrate(camL_geometry, camH_geometry, obslist, distortionActive=Fals
         target_pose_dvs.append(target_pose_dv)
     
     #add camera dvs
-    camL_geometry.setDvActiveStatus(True, distortionActive, False)
-    camH_geometry.setDvActiveStatus(True, distortionActive, False)
+    #T14: pairwise baseline init also optimizes intrinsics by default. For a camera whose
+    #intrinsics are frozen, mark projection+distortion inactive so this stage estimates
+    #only the baseline (and target poses) and leaves the loaded intrinsics untouched.
+    if getattr(camL_geometry, "fixIntrinsics", False):
+        camL_geometry.setDvActiveStatus(False, False, False)
+    else:
+        camL_geometry.setDvActiveStatus(True, distortionActive, False)
+    if getattr(camH_geometry, "fixIntrinsics", False):
+        camH_geometry.setDvActiveStatus(False, False, False)
+    else:
+        camH_geometry.setDvActiveStatus(True, distortionActive, False)
     problem.addDesignVariable(camL_geometry.dv.distortionDesignVariable())
     problem.addDesignVariable(camL_geometry.dv.projectionDesignVariable())
     problem.addDesignVariable(camL_geometry.dv.shutterDesignVariable())
@@ -282,12 +291,19 @@ def solveFullBatch(cameras, baseline_guesses, graph):
     problem = aopt.OptimizationProblem()
     
     #add camera dvs
+    #T15: solveFullBatch is an alternative initial-guess path (via MulticamGraph). It is
+    #not reached by the standard pairwise extrinsic flow, but freezing is threaded here for
+    #completeness: a fixed camera has projection+distortion marked inactive so this batch
+    #estimates only extrinsics/target poses.
     for cam in cameras:
-        cam.setDvActiveStatus(True, True, False)
+        if getattr(cam, "fixIntrinsics", False):
+            cam.setDvActiveStatus(False, False, False)
+        else:
+            cam.setDvActiveStatus(True, True, False)
         problem.addDesignVariable(cam.dv.distortionDesignVariable())
         problem.addDesignVariable(cam.dv.projectionDesignVariable())
         problem.addDesignVariable(cam.dv.shutterDesignVariable())
-    
+
     baseline_dvs = list()
     for baseline_idx in range(0, len(cameras)-1): 
         baseline_dv = aopt.TransformationDv(baseline_guesses[baseline_idx])

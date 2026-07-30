@@ -119,6 +119,16 @@ def parseArgs():
     outputSettings.add_argument('--export-poses', action='store_true', dest='exportPoses', help='Export the optimized poses into a CSV (time_ns, position, quaterion)')
     outputSettings.add_argument('--approx-focal-length', type=float, default=None, dest='approxFocalLength', help='Initial focal length in pixels if auto-initialization fails.')
 
+    intrinsicsSettings = parser.add_argument_group('Intrinsics initialization')
+    intrinsicsSettings.add_argument('--intrinsics', nargs='+', dest='intrinsics', default=None,
+        help='Pre-computed intrinsics camchain YAML file(s). Provide either a single merged '
+             'camchain with cam0..camN blocks indexed to --topics order, or one camchain file '
+             'per --topics entry (each read from its cam0 block). Used with --fix-intrinsics to '
+             'freeze intrinsics during optimization, or alone as a warm-start initial guess.')
+    intrinsicsSettings.add_argument('--fix-intrinsics', action='store_true', dest='fixIntrinsics', default=False,
+        help='Freeze the loaded intrinsics (projection and distortion) during optimization; '
+             'only extrinsics and target poses are estimated. Requires --intrinsics.')
+
     #print help if no argument is specified
     if len(sys.argv)==1:
         parser.print_help()
@@ -137,6 +147,19 @@ def parseArgs():
         
     if parsed.minViewOutlier<1:
         sm.logError("Please specify a positive integer (--min-views-outlier).")
+        sys.exit(2)
+
+    #intrinsics loading / freezing checks (T19)
+    if parsed.intrinsics is not None and len(parsed.intrinsics) == 0:
+        sm.logError("Please provide at least one intrinsics file with --intrinsics.")
+        sys.exit(2)
+    if parsed.fixIntrinsics and parsed.intrinsics is None:
+        sm.logError("Please provide --intrinsics when using --fix-intrinsics.")
+        sys.exit(2)
+    if parsed.intrinsics is not None and len(parsed.intrinsics) > 1 and len(parsed.intrinsics) != len(parsed.topics):
+        sm.logError("--intrinsics expects either a single merged camchain file or exactly one "
+                    "file per --topics entry ({0} topics), but {1} files were given.".format(
+                        len(parsed.topics), len(parsed.intrinsics)))
         sys.exit(2)
     
     #there is a with the gtk plot widget, so we cant plot if we have opencv windows open...
@@ -158,6 +181,23 @@ def main():
 
     #register signal handler
     signal.signal(signal.SIGINT, signal_exit)
+
+    #T18: --approx-focal-length only feeds auto-initialization, which is skipped for frozen
+    #cameras. Warn (not fatal) if both flags are supplied.
+    if parsed.approxFocalLength is not None and parsed.fixIntrinsics:
+        sm.logWarn("Both --approx-focal-length and --fix-intrinsics specified; focal length "
+                   "approximation will not be used during fixed camera initialization.")
+
+    #T20: preload the intrinsics camchain(s), if any. Two accepted layouts:
+    #  - a single merged camchain (cam0..camN) indexed to --topics order, or
+    #  - one camchain file per --topics entry (each read from its own cam0 block).
+    #Always read via CameraChainParameters (nested reader), NOT the flat CameraParameters
+    #reader (which KeyErrors on nested cam0.. files).
+    intrinsicsChains = None
+    intrinsicsMerged = False
+    if parsed.intrinsics is not None:
+        intrinsicsChains = [kc.CameraChainParameters(f) for f in parsed.intrinsics]
+        intrinsicsMerged = (len(intrinsicsChains) == 1)
 
     targetConfig = kc.CalibrationTargetParameters(parsed.targetYaml)
 
@@ -192,20 +232,56 @@ def main():
                 obsdb.addObservation(cam_id, obs)
 
             #initialize the intrinsics
-            if parsed.approxFocalLength is not None:
-                import os as _os
-                _r, _w = _os.pipe()
-                _os.write(_w, (str(parsed.approxFocalLength) + '\n').encode())
-                _os.close(_w)
-                _saved_stdin = _os.dup(0)
-                _os.dup2(_r, 0)
-                _os.close(_r)
-            if not cam.initGeometryFromObservations(observations):
+            if intrinsicsChains is not None:
+                #T20: fixed / warm-start path -- inject pre-computed intrinsics instead of
+                #auto-estimating them from the observations.
+                if intrinsicsMerged:
+                    #single merged camchain: pick the block matching this camera's order
+                    camParams = intrinsicsChains[0].getCameraParameters(cam_id)
+                else:
+                    #one file per topic: take the cam0 block of this camera's file
+                    camParams = intrinsicsChains[cam_id].getCameraParameters(0)
+
+                #model/distortion tokens for this camera, e.g. 'pinhole-radtan'
+                model_token, _, distortion_token = modelName.partition('-')
+
+                #Establish the projection resolution (ru/rv) from the observed image size.
+                #projection.setParameters() only writes fu/fv/cu/cv, never ru/rv, and a
+                #default-constructed geometry has ru=rv=0 -- so without this the output
+                #camchain would report resolution [0,0]. initializeIntrinsics() sets ru/rv
+                #(and a focal guess we immediately overwrite); it never blocks on stdin here
+                #because KALIBR_MANUAL_FOCAL_LENGTH_INIT is not set.
+                if len(observations) == 0:
+                    raise RuntimeError("No target observations for camera with topic: {0}; "
+                                       "cannot load fixed intrinsics.".format(topic))
+                cam.geometry.initializeIntrinsics(observations)
+                resolution = (observations[0].imCols(), observations[0].imRows())
+
+                cam.initGeometryFromParameters(camParams, model_token, distortion_token, resolution)
+                #initGeometryFromParameters() always flags the geometry frozen. Honor the
+                #CLI: without --fix-intrinsics the loaded values are only a warm-start guess
+                #and must stay free to be optimized, so unset the freeze flag in that case.
+                cam.fixIntrinsics = parsed.fixIntrinsics
+                _src = parsed.intrinsics[0] if intrinsicsMerged else parsed.intrinsics[cam_id]
+                if parsed.fixIntrinsics:
+                    print("\tLoaded FIXED intrinsics from {0}".format(_src))
+                else:
+                    print("\tLoaded intrinsics (warm-start, not frozen) from {0}".format(_src))
+            else:
+                if parsed.approxFocalLength is not None:
+                    import os as _os
+                    _r, _w = _os.pipe()
+                    _os.write(_w, (str(parsed.approxFocalLength) + '\n').encode())
+                    _os.close(_w)
+                    _saved_stdin = _os.dup(0)
+                    _os.dup2(_r, 0)
+                    _os.close(_r)
+                if not cam.initGeometryFromObservations(observations):
+                    if parsed.approxFocalLength is not None:
+                        _os.dup2(_saved_stdin, 0); _os.close(_saved_stdin)
+                    raise RuntimeError("Could not initialize the intrinsics for camera with topic: {0}. Try to use --verbose and check whether the calibration target extraction is successful.".format(topic))
                 if parsed.approxFocalLength is not None:
                     _os.dup2(_saved_stdin, 0); _os.close(_saved_stdin)
-                raise RuntimeError("Could not initialize the intrinsics for camera with topic: {0}. Try to use --verbose and check whether the calibration target extraction is successful.".format(topic))
-            if parsed.approxFocalLength is not None:
-                _os.dup2(_saved_stdin, 0); _os.close(_saved_stdin)
             print("\tProjection initialized to: %s" % cam.geometry.projection().getParameters().flatten())
             print("\tDistortion initialized to: %s" % cam.geometry.projection().distortion().getParameters().flatten())
             
@@ -249,7 +325,12 @@ def main():
                 print("initialized cam{0} to:".format(cam_idx))
                 print("\t projection cam{0}: {1}".format(cam_idx, cam.geometry.projection().getParameters().flatten()))
                 print("\t distortion cam{0}: {1}".format(cam_idx, cam.geometry.projection().distortion().getParameters().flatten()))
-                
+
+            #T16: safety net -- all per-camera / pairwise initialization (initializeIntrinsics,
+            #calibrateIntrinsics, stereoCalibrate, solveFullBatch) has run by now. Re-inject the
+            #loaded intrinsics for every frozen camera and assert they still match, so any missed
+            #mutation site fails loudly here rather than silently drifting into the joint solve.
+            kcc.safetyCheckFixedIntrinsics(cameraList)
 
             print("initializing calibrator")
             calibrator = kcc.CameraCalibration(cameraList, baseline_guesses, verbose=parsed.verbose, useBlakeZissermanMest=parsed.doBlakeZisserman)
@@ -468,6 +549,13 @@ def main():
                 
                 #reinitialize the intrinsics
                 for cam_id, cam in enumerate(cameraList):
+                    #T21: never re-auto-initialize a frozen camera during a divergence
+                    #restart -- that would overwrite the loaded intrinsics. (This is also
+                    #guarded inside initGeometryFromObservations, but skip explicitly to
+                    #avoid unnecessary work and keep the loaded values untouched.)
+                    if getattr(cam, "fixIntrinsics", False):
+                        print("Skipping re-initialization for fixed camera {0} during divergence restart".format(cam_id))
+                        continue
                     print("Reinitialize the intrinsics for camera {0}".format(cam_id))
                     observations = obsdb.getAllObsCam(cam_id)
                     if parsed.approxFocalLength is not None:

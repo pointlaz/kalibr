@@ -28,6 +28,122 @@ LANDMARK_GROUP_ID = 2
 class OptimizationDiverged(Exception):
     pass
 
+def validateIntrinsicsLoadCompatibility(camParams, model_name, distortion_name, resolution, topic=None):
+    """T17 — hard-fail loudly if loaded intrinsics do not match the expected setup.
+
+    Cross-checks the camera model, distortion model and image resolution declared in the
+    loaded intrinsics YAML against the values requested on the command line (--models,
+    split on '-') and the actual dataset resolution. radtan and equidistant both take four
+    distortion coefficients, so without this check a wrong file would load silently.
+
+    Args:
+        camParams:       kalibr_common.ConfigReader.CameraParameters for one camera.
+        model_name:      expected camera-model token ('pinhole', 'omni', 'eucm', 'ds').
+        distortion_name: expected distortion-model token ('radtan', 'equidistant',
+                         'fov', 'none').
+        resolution:      (width, height) from the dataset.
+        topic:           image topic, for clearer error messages (optional).
+
+    Returns:
+        True on success.
+
+    Raises:
+        ValueError: on any camera-model / distortion-model / resolution mismatch.
+    """
+    where = " for topic {0}".format(topic) if topic is not None else ""
+
+    #The --models distortion token differs from the canonical name written to the YAML for
+    #the equidistant model ('equi' on the CLI vs 'equidistant' in the file, per
+    #CameraUtils.saveChainParametersYaml / ConfigReader.checkDistortion). Normalize so a
+    #correctly-matched pair is not rejected. Camera-model tokens ('pinhole','omni','eucm',
+    #'ds') already match the YAML verbatim.
+    distortion_alias = {'equi': 'equidistant'}
+    expected_distortion = distortion_alias.get(distortion_name, distortion_name)
+
+    loaded_model, _ = camParams.getIntrinsics()
+    loaded_distortion, _ = camParams.getDistortion()
+    loaded_resolution = camParams.getResolution()
+
+    if loaded_model != model_name:
+        raise ValueError(
+            "Fixed-intrinsics camera model mismatch{0}: loaded intrinsics file specifies "
+            "camera_model '{1}' but the command line (--models) requested '{2}'.".format(
+                where, loaded_model, model_name))
+
+    if loaded_distortion != expected_distortion:
+        raise ValueError(
+            "Fixed-intrinsics distortion model mismatch{0}: loaded intrinsics file "
+            "specifies distortion_model '{1}' but the command line (--models) requested "
+            "'{2}'.".format(where, loaded_distortion, distortion_name))
+
+    #getResolution() returns [width, height]; resolution is a (width, height) tuple.
+    if list(loaded_resolution) != list(resolution):
+        raise ValueError(
+            "Fixed-intrinsics resolution mismatch{0}: loaded intrinsics file specifies "
+            "resolution {1} but the dataset resolution is {2}.".format(
+                where, list(loaded_resolution), list(resolution)))
+
+    return True
+
+def safetyCheckFixedIntrinsics(cameras, atol=1e-9):
+    """T16 — pre-solve safety net for frozen intrinsics.
+
+    Immediately before the joint optimization, for every camera whose intrinsics are
+    frozen this re-injects the originally-loaded projection + distortion parameters and
+    asserts (np.allclose, tight tolerance) that the live geometry now matches them. If any
+    earlier stage (linear init, per-camera BA, stereoCalibrate, solveFullBatch, divergence
+    restart) has silently drifted a fixed camera, this fails loudly here instead of
+    producing a wrong result. Cameras that are not frozen are left untouched.
+
+    Args:
+        cameras: list of CameraGeometry objects.
+        atol:    absolute tolerance for the np.allclose comparison (default 1e-9).
+
+    Raises:
+        AssertionError: if a fixed camera's parameters cannot be held at the loaded values.
+    """
+    for cam_id, cam in enumerate(cameras):
+        if not getattr(cam, "fixIntrinsics", False):
+            continue
+
+        if cam.loaded_projection is None or cam.loaded_distortion is None:
+            raise AssertionError(
+                "Camera {0} is flagged fixIntrinsics but has no stored loaded parameters; "
+                "initGeometryFromParameters() must run before the safety check.".format(cam_id))
+
+        proj = cam.geometry.projection()
+        expected_proj = np.asarray(cam.loaded_projection, dtype=float).flatten()
+        expected_dist = np.asarray(cam.loaded_distortion, dtype=float).flatten()
+
+        #diagnostic: report if an upstream stage drifted a supposedly-frozen camera before
+        #we correct it (indicates a missed freeze site; the joint solve stays frozen by T11).
+        pre_proj = np.asarray(proj.getParameters(), dtype=float).flatten()
+        pre_dist = np.asarray(proj.distortion().getParameters(), dtype=float).flatten()
+        if not (np.allclose(pre_proj, expected_proj, atol=atol) and np.allclose(pre_dist, expected_dist, atol=atol)):
+            sm.logWarn("Fixed cam{0} intrinsics drifted before the joint solve and will be "
+                       "re-applied: projection {1} -> {2}, distortion {3} -> {4}.".format(
+                           cam_id, pre_proj, expected_proj, pre_dist, expected_dist))
+
+        #re-inject the canonical loaded values
+        proj.setParameters(np.array(cam.loaded_projection, dtype=float).reshape(-1, 1))
+        proj.distortion().setParameters(np.array(cam.loaded_distortion, dtype=float).reshape(-1, 1))
+
+        #read back and assert numeric equality (NOT bit-for-bit)
+        readback_proj = np.asarray(proj.getParameters(), dtype=float).flatten()
+        readback_dist = np.asarray(proj.distortion().getParameters(), dtype=float).flatten()
+
+        if not np.allclose(readback_proj, expected_proj, atol=atol):
+            raise AssertionError(
+                "Camera {0} projection intrinsics drifted despite fixIntrinsics: expected "
+                "{1}, got {2}.".format(cam_id, expected_proj, readback_proj))
+        if not np.allclose(readback_dist, expected_dist, atol=atol):
+            raise AssertionError(
+                "Camera {0} distortion coefficients drifted despite fixIntrinsics: expected "
+                "{1}, got {2}.".format(cam_id, expected_dist, readback_dist))
+
+        sm.logInfo("Safety check passed for cam{0}: intrinsics frozen and re-applied "
+                   "(projection={1}, distortion={2}).".format(cam_id, expected_proj, expected_dist))
+
 class CameraGeometry(object):
     def __init__(self, cameraModel, targetConfig, dataset, geometry=None, verbose=False):
         self.dataset = dataset
@@ -41,8 +157,24 @@ class CameraGeometry(object):
         
         #create the design variables
         self.dv = cameraModel.designVariable(self.geometry)
-        self.setDvActiveStatus(True, True, False)
         self.isGeometryInitialized = False
+        #when True, the intrinsics (projection + distortion) are held fixed and must not
+        #be re-estimated. Defaults to False; only initGeometryFromParameters() sets it True.
+        #Downstream mutation sites (T11-T21) check this flag; introducing it here so those
+        #checks are always safe regardless of how the geometry was initialized.
+        self.fixIntrinsics = False
+        #loaded intrinsics are stashed here by initGeometryFromParameters() so the
+        #pre-solve safety net (safetyCheckFixedIntrinsics) can re-inject and assert them.
+        self.loaded_projection = None
+        self.loaded_distortion = None
+        #T11: honor the freeze flag when first toggling design-variable activity. At
+        #construction time fixIntrinsics is always False (only initGeometryFromParameters()
+        #flips it True afterwards), so in practice this is the default active setup; the
+        #conditional is kept for symmetry with every other setDvActiveStatus site.
+        if self.fixIntrinsics:
+            self.setDvActiveStatus(False, False, False)
+        else:
+            self.setDvActiveStatus(True, True, False)
 
         #create target detector
         self.ctarget = TargetDetector(targetConfig, self.geometry, showCorners=verbose)
@@ -53,25 +185,103 @@ class CameraGeometry(object):
         self.dv.shutterDesignVariable().setActive(shutterActice)
 
     def initGeometryFromObservations(self, observations):
+        #When intrinsics are frozen (initGeometryFromParameters was used) we must NOT
+        #re-estimate them here: neither the linear focal-length guess (T12) nor the
+        #per-camera bundle adjustment (T13) may run, as both mutate projection/distortion
+        #in place. This guard also makes the divergence-restart path (T21) safe if a fixed
+        #camera ever reaches it. A fixed camera is already initialized, so report success.
+        if self.fixIntrinsics:
+            sm.logInfo("Intrinsics are frozen for cam with topic {0}; skipping focal-length "
+                       "guess and per-camera bundle adjustment.".format(self.dataset.topic))
+            self.isGeometryInitialized = True
+            return True
+
         #obtain focal length guess
         success = self.geometry.initializeIntrinsics(observations)
         if not success:
             sm.logError("initialization of focal length for cam with topic {0} failed  ".format(self.dataset.topic))
-        
+
         #in case of an omni model, first optimize over intrinsics only
         #(--> catch most of the distortion with the projection model)
         if self.model == acvb.DistortedOmni:
             success = kcc.calibrateIntrinsics(self, observations, distortionActive=False)
             if not success:
                 sm.logError("initialization of intrinsics for cam with topic {0} failed  ".format(self.dataset.topic))
-        
-        #optimize for intrinsics & distortion    
+
+        #optimize for intrinsics & distortion
         success = kcc.calibrateIntrinsics(self, observations)
         if not success:
             sm.logError("initialization of intrinsics for cam with topic {0} failed  ".format(self.dataset.topic))
-        
-        self.isGeometryInitialized = success        
+
+        self.isGeometryInitialized = success
         return success
+
+    def initGeometryFromParameters(self, camParams, model_name, distortion_name, resolution):
+        """Initialize the camera geometry from previously-calibrated intrinsics and
+        freeze them, instead of auto-estimating from observations.
+
+        This is the fixed-intrinsics sibling of initGeometryFromObservations(): rather
+        than running initializeIntrinsics()/calibrateIntrinsics() on the target
+        observations, it injects the loaded projection + distortion parameters directly
+        into self.geometry and flags the intrinsics as fixed so that downstream
+        estimation steps leave them untouched.
+
+        Args:
+            camParams:       a kalibr_common.ConfigReader.CameraParameters object holding
+                             the per-camera intrinsics (already extracted from the camera
+                             chain by the caller; NOT the chain, NOT a file path).
+            model_name:      expected camera-model token parsed from --models for this
+                             camera (e.g. 'pinhole', 'omni', 'eucm', 'ds').
+            distortion_name: expected distortion-model token (e.g. 'radtan',
+                             'equidistant', 'fov', 'none').
+            resolution:      (width, height) tuple from the dataset.
+
+        Raises:
+            ValueError: if the loaded camera model, distortion model, or resolution do
+                        not match the expected values.
+        """
+        #--- read the loaded parameters (getIntrinsics/getDistortion also validate
+        #    internally via checkIntrinsics/checkDistortion in ConfigReader) ---
+        loaded_model, intrinsics = camParams.getIntrinsics()
+        loaded_distortion, dist_coeffs = camParams.getDistortion()
+
+        #--- validate against the expected (CLI-derived / dataset-derived) values ---
+        #T17: cross-check camera model, distortion model and resolution loudly before
+        #injecting anything (radtan and equidistant both take 4 coeffs -> a wrong load
+        #would otherwise be silent). Raises ValueError on any mismatch.
+        validateIntrinsicsLoadCompatibility(
+            camParams, model_name, distortion_name, resolution, topic=self.dataset.topic)
+
+        #--- inject the loaded parameters into the live geometry ---
+        #The intrinsics list is stored (by CameraParameters.setIntrinsics) in exactly the
+        #same order the projection model expects, so it maps directly onto
+        #projection().setParameters() without reordering:
+        #   pinhole -> [fu, fv, cu, cv]
+        #   omni    -> [xi, fu, fv, cu, cv]
+        #   eucm    -> [alpha, beta, fu, fv, cu, cv]
+        #   ds      -> [xi, alpha, fu, fv, cu, cv]
+        #This is the exact inverse of saveChainParametersYaml() in CameraUtils.py.
+        #Distortion coeffs map directly onto distortion().setParameters():
+        #   radtan -> [k1, k2, p1, p2]; equidistant -> [k1, k2, k3, k4];
+        #   fov -> [w]; none -> [].
+        #setParameters is bound to an Eigen Nx1 matrix, so reshape to (-1, 1).
+        proj_params = np.array(intrinsics, dtype=float).reshape(-1, 1)
+        dist_params = np.array(dist_coeffs, dtype=float).reshape(-1, 1)
+        proj = self.geometry.projection()
+        proj.setParameters(proj_params)
+        proj.distortion().setParameters(dist_params)
+
+        #--- record state ---
+        self.isGeometryInitialized = True
+        self.fixIntrinsics = True
+        self.model_name = model_name
+        self.distortion_name = distortion_name
+        #T16: keep the canonical loaded values so the pre-solve safety net can re-inject
+        #and assert them. Store copies so later in-place mutations can't corrupt them.
+        self.loaded_projection = proj_params.copy()
+        self.loaded_distortion = dist_params.copy()
+
+        return True
 
 class TargetDetector(object):
     def __init__(self, targetConfig, cameraGeometry, showCorners=False, showReproj=False, showOneStep=False):
@@ -176,7 +386,14 @@ class CalibrationTargetOptimizationProblem(ic.CalibrationOptimizationProblem):
         for camera in cameras:
             if not camera.isGeometryInitialized:
                 raise RuntimeError('The camera geometry is not initialized. Please initialize with initGeometry() or initGeometryFromDataset()')
-            camera.setDvActiveStatus(True, True, False)
+            #T11: the joint solve is the last mutation site. The design variables are still
+            #added to the problem (they participate in the reprojection error expressions),
+            #but for a fixed camera projection+distortion are marked inactive so the solver
+            #leaves the frozen intrinsics untouched; only extrinsics/target poses move.
+            if getattr(camera, "fixIntrinsics", False):
+                camera.setDvActiveStatus(False, False, False)
+            else:
+                camera.setDvActiveStatus(True, True, False)
             rval.addDesignVariable(camera.dv.distortionDesignVariable(), CALIBRATION_GROUP_ID)
             rval.addDesignVariable(camera.dv.projectionDesignVariable(), CALIBRATION_GROUP_ID)
             rval.addDesignVariable(camera.dv.shutterDesignVariable(), CALIBRATION_GROUP_ID)
